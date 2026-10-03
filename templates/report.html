@@ -32,9 +32,11 @@
 </head>
 <body>
 <main>
-  <header>
-    <h1>NetGuard - Network Security Report</h1>
-    <p>Target {{ r.meta.target }} · {{ r.meta.mode_label }} · {{ r.meta.finished }} · scanned from {{ r.meta.scanner_host }}</p>
+  {% set brand = r.meta.brand %}
+  <header{% if brand %} style="background: {{ brand.color if brand.color and brand.color[0] == '#' and brand.color|length in (4, 7) else '#0b1730' }}"{% endif %}>
+    <h1>{% if brand %}{{ brand.company }} - {% endif %}Network Security Report</h1>
+    <p>{% if r.meta.site %}Site {{ r.meta.site }} · {% endif %}Target {{ r.meta.target }} · {{ r.meta.mode_label }} · {{ r.meta.finished }} · scanned from {{ r.meta.scanner_host }}</p>
+    {% if brand and brand.contact %}<p>Prepared by {{ brand.company }} · {{ brand.contact }}</p>{% endif %}
   </header>
 
   {% if "summary" in s %}

@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -22,21 +22,29 @@
     <a href="#wifi-sec">Wi-Fi</a>
     <a href="#reports-sec">Reports</a>
     <a href="#history-sec">History</a>
+    <a href="#pro-sec">Pro</a>
     <a href="#settings-sec">Settings</a>
   </nav>
   <div class="top-right">
+    <a href="#pro-sec" class="pill edition" id="edition-pill">Free</a>
     <a href="#alerts" class="pill" id="alert-pill">Alerts: 0</a>
     <span id="status-pill" class="pill">Idle</span>
   </div>
 </header>
+<div class="update-banner hidden" id="update-banner"></div>
 
 <main>
   <div class="page-title" id="overview">
     <h1>Network overview</h1>
     <p class="mono-sub" id="last-scan">No scans yet. Run your first scan below.</p>
+    <p class="mono-sub hidden" id="next-scan"></p>
   </div>
 
   <section class="card controls">
+    <div class="field">
+      <label for="site">Site</label>
+      <select id="site" autocomplete="off"><option value="">This network</option></select>
+    </div>
     <div class="field">
       <label for="mode">Scan mode</label>
       <select id="mode" autocomplete="off"></select>
@@ -192,6 +200,37 @@
     <div class="card" id="alerts">
       <div class="row-between"><h2>Alerts</h2><button id="alerts-read" class="small">Mark all read</button></div>
       <div id="alert-list" class="scroll-list"></div>
+    </div>
+  </section>
+
+  <section class="pro-grid" id="pro-sec">
+    <div class="card" id="license-card">
+      <div class="row-between"><h2>Licence</h2><span class="pill" id="license-badge">Free</span></div>
+      <div id="license-body"></div>
+    </div>
+    <div class="card">
+      <div class="row-between"><h2>Sites</h2><span class="pro-tag" data-pro="sites">Pro: unlimited</span></div>
+      <p class="hint">Save the networks you look after and pick one when scanning. The free edition keeps one site.</p>
+      <div id="sites-list"></div>
+      <form id="site-form" class="inline-form">
+        <input name="name" placeholder="Name, e.g. Home" maxlength="60" autocomplete="off">
+        <input name="cidr" placeholder="192.168.1.0/24" autocomplete="off">
+        <button type="submit">Add</button>
+      </form>
+      <p class="note error" id="site-error"></p>
+    </div>
+    <div class="card">
+      <div class="row-between"><h2>Scheduled scans</h2><span class="pro-tag" data-pro="scheduler">Pro</span></div>
+      <form id="schedule-form" class="settings" data-group="schedule"></form>
+      <p class="hint" id="schedule-next"></p>
+    </div>
+    <div class="card">
+      <div class="row-between"><h2>Email and Telegram alerts</h2><span class="pro-tag" data-pro="notifications">Pro</span></div>
+      <form id="notify-form" class="settings" data-group="notify"></form>
+    </div>
+    <div class="card">
+      <div class="row-between"><h2>Report branding</h2><span class="pro-tag" data-pro="branding">Pro</span></div>
+      <form id="brand-form" class="settings" data-group="brand"></form>
     </div>
   </section>
 
