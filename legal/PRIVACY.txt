@@ -1,0 +1,23 @@
+NETGUARD PRIVACY POLICY
+DRAFT - HAVE A QUALIFIED LAWYER REVIEW THIS BEFORE PUBLISHING.
+
+What NetGuard collects
+- Scan results (device IP and MAC addresses, hostnames, open ports, service banners, Wi-Fi
+  network names and signal strength, findings) are stored ONLY on your computer in
+  %LOCALAPPDATA%\NetGuard. We never receive them.
+- A local audit log of actions (scans started, reports generated, settings changed).
+
+When NetGuard contacts the internet
+- Vendor database download (on request): fetches the public IEEE OUI list. No scan data is sent.
+- Optional CVE lookup (off by default): sends detected software product/version strings
+  (e.g. "OpenSSH 8.2") to the NIST National Vulnerability Database API. No IP addresses,
+  MAC addresses or network names are sent.
+- [License activation / update checks, once implemented: describe exactly what is sent.]
+
+Telemetry
+- NetGuard contains no analytics or telemetry.
+
+Deleting your data
+- Uninstall NetGuard and delete the folder %LOCALAPPDATA%\NetGuard.
+
+Contact: [SUPPORT EMAIL]
