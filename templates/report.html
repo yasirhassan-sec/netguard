@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NetGuard Report - {{ r.meta.finished }}</title>
+<style>
+  body { font: 14px/1.55 "Segoe UI", system-ui, sans-serif; color: #1f2328; background: #f6f8fa; margin: 0; }
+  main { max-width: 1000px; margin: 0 auto; padding: 28px 16px 60px; }
+  header { background: #0b1730; color: #fff; padding: 22px 24px; border-radius: 10px; }
+  header h1 { margin: 0; font-size: 22px; } header p { margin: 4px 0 0; color: #9fb3d1; font-size: 13px; }
+  h2 { margin: 30px 0 10px; font-size: 17px; border-bottom: 1px solid #d0d7de; padding-bottom: 6px; }
+  .muted { color: #656d76; font-size: 12px; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 16px; }
+  .stat { background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 12px; }
+  .stat b { display: block; font-size: 24px; } .stat span { color: #656d76; font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #d0d7de; }
+  th, td { text-align: left; padding: 7px 9px; border-bottom: 1px solid #eaeef2; vertical-align: top; font-size: 13px; }
+  th { background: #f6f8fa; color: #656d76; font-weight: 500; }
+  .mono { font-family: Consolas, monospace; font-size: 12px; }
+  .finding { background: #fff; border: 1px solid #d0d7de; border-left: 4px solid #8c959f; border-radius: 8px; padding: 10px 14px; margin-bottom: 10px; break-inside: avoid; }
+  .finding p { margin: 4px 0; }
+  .sev { text-transform: uppercase; font-size: 10.5px; font-weight: 700; padding: 1px 7px; border-radius: 4px; color: #fff; background: #8c959f; }
+  .critical { border-left-color: #cf222e; } .sev.critical { background: #cf222e; }
+  .high { border-left-color: #d1590b; } .sev.high { background: #d1590b; }
+  .medium { border-left-color: #9a6700; } .sev.medium { background: #9a6700; }
+  .low { border-left-color: #0969da; } .sev.low { background: #0969da; }
+  .fix { color: #1a7f37; }
+  @media (max-width: 700px) { .stats { grid-template-columns: repeat(2, 1fr); } table { display: block; overflow-x: auto; } }
+  @media print { body { background: #fff; } header { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>NetGuard - Network Security Report</h1>
+    <p>Target {{ r.meta.target }} · {{ r.meta.mode_label }} · {{ r.meta.finished }} · scanned from {{ r.meta.scanner_host }}</p>
+  </header>
+
+  {% if "summary" in s %}
+  <h2>1. Executive summary</h2>
+  <div class="stats">
+    <div class="stat"><span>NetGuard score</span><b>{{ r.summary.score }} / 100</b><span>Grade {{ r.summary.grade }} · {{ r.summary.status }}</span></div>
+    <div class="stat"><span>Devices</span><b>{{ r.summary.devices }}</b><span>{{ r.summary.vulnerable_devices }} vulnerable</span></div>
+    <div class="stat"><span>Open ports</span><b>{{ r.summary.open_ports }}</b></div>
+    <div class="stat"><span>Findings</span><b>{{ r.findings|length }}</b>
+      <span>{% for k, v in r.summary.counts.items() if v %}{{ v }} {{ k }}{% if not loop.last %} · {% endif %}{% endfor %}</span></div>
+  </div>
+  <p class="muted">The score is NetGuard's own heuristic (severity weighted by detection confidence), not an industry-standard rating.</p>
+  {% endif %}
+
+  {% if "network" in s %}
+  {% set c = r.wifi.connected %}
+  <h2>2. Network overview</h2>
+  <p>Gateway <b>{{ r.meta.gateway or "unknown" }}</b>.
+    {% if c %}Connected to Wi-Fi <b>{{ c.ssid }}</b> ({{ c.auth }} / {{ c.encryption }}), {{ c.band }} channel {{ c.channel }}, signal {{ c.signal }}% ({{ c.dbm }} dBm).{% endif %}
+    {{ r.wifi.networks|length }} access point(s) visible.</p>
+  {% if r.wifi.networks %}
+  <table>
+    <tr><th>SSID</th><th>Signal</th><th>Band / channel</th><th>Security</th><th>Risk</th></tr>
+    {% for n in r.wifi.networks %}
+    <tr><td>{{ n.ssid }}{% if n.connected %} (connected){% endif %}</td><td>{{ n.signal }}% / {{ n.dbm }} dBm</td>
+      <td>{{ n.band }} · {{ n.channel }}</td><td>{{ n.auth }} {{ n.encryption }}</td><td>{{ n.risk.level }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  {% endif %}
+
+  {% if "devices" in s %}
+  <h2>3. Discovered devices</h2>
+  <table>
+    <tr><th>IP</th><th>Hostname</th><th>Type / OS</th><th>Vendor</th><th>MAC</th><th>Risk</th><th>Open ports</th></tr>
+    {% for d in r.devices %}
+    <tr><td class="mono">{{ d.ip }}{% if d.is_gateway %} (gateway){% endif %}{% if d.is_self %} (you){% endif %}</td>
+      <td>{{ d.hostname or "-" }}</td><td>{{ d.type }}<br><span class="muted">{{ d.os }}</span></td><td>{{ d.vendor }}</td>
+      <td class="mono">{{ d.mac or "-" }}</td><td>{{ d.risk.level }}</td>
+      <td>{% for p in d.open_ports %}<div><b>{{ p.port }}/{{ p.service }}</b>{% if p.version %} <span class="muted">{{ p.version }}</span>{% endif %}</div>{% else %}-{% endfor %}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {% if "vuln_summary" in s %}
+  <h2>4. Vulnerability summary</h2>
+  <table>
+    <tr><th>Severity</th>{% for k in r.summary.counts %}<th>{{ k|title }}</th>{% endfor %}</tr>
+    <tr><td>Findings</td>{% for v in r.summary.counts.values() %}<td>{{ v }}</td>{% endfor %}</tr>
+  </table>
+  <p></p>
+  <table>
+    <tr><th>Category</th><th>Findings</th></tr>
+    {% for k, v in r.summary.by_category.items() if v %}<tr><td>{{ k }}</td><td>{{ v }}</td></tr>{% endfor %}
+  </table>
+  {% endif %}
+
+  {% if "critical" in s %}
+  <h2>5. Critical findings</h2>
+  {% for f in r.findings if f.severity in ("critical", "high") %}
+    <p><span class="sev {{ f.severity }}">{{ f.severity }}</span> <b>{{ f.title }}</b> <span class="muted">{{ f.host }}</span></p>
+  {% else %}<p>No critical or high findings.</p>{% endfor %}
+  {% endif %}
+
+  {% if "findings" in s %}
+  <h2>6. Detailed findings</h2>
+  {% for f in r.findings %}
+  <div class="finding {{ f.severity }}">
+    <p><span class="sev {{ f.severity }}">{{ f.severity }}</span> <b>{{ f.title }}</b></p>
+    <p class="muted">{{ f.id }} · {{ f.host }}{% if f.port %} · port {{ f.port }}{% endif %}{% if f.service %} · {{ f.service }}{% endif %}{% if f.version %} {{ f.version }}{% endif %} · confidence {{ f.confidence }}</p>
+    <p>{{ f.detail }}</p>
+    {% if f.evidence %}<p class="muted mono">Evidence: {{ f.evidence }}</p>{% endif %}
+    <p class="fix">Fix: {{ f.fix }}</p>
+    {% if f.refs %}<p class="muted">{{ f.refs[:10]|join(", ") }}</p>{% endif %}
+  </div>
+  {% else %}<p>No issues found.</p>{% endfor %}
+  {% endif %}
+
+  {% if "remediation" in s %}
+  <h2>7. Recommended remediation</h2>
+  <table>
+    <tr><th>#</th><th>Priority</th><th>Action</th><th>Affected</th></tr>
+    {% for p in plan %}
+    <tr><td>{{ loop.index }}</td><td><span class="sev {{ p.severity }}">{{ p.severity }}</span></td><td>{{ p.fix }}<br><span class="muted">{{ p.titles|join("; ") }}</span></td><td>{{ p.hosts|join(", ") }}</td></tr>
+    {% else %}<tr><td colspan="4">Nothing to fix.</td></tr>{% endfor %}
+  </table>
+  {% endif %}
+
+  {% if "config" in s %}
+  <h2>8. Scan configuration</h2>
+  <table>
+    <tr><td>Mode</td><td>{{ r.meta.mode_label }}</td></tr>
+    <tr><td>Target</td><td>{{ r.meta.target }}</td></tr>
+    {% if r.meta.ports %}<tr><td>Ports</td><td>{{ r.meta.ports }}</td></tr>{% endif %}
+    {% for k, v in r.meta.options.items() %}<tr><td>{{ k }}</td><td>{{ v }}</td></tr>{% endfor %}
+  </table>
+  <h2>9. Scan timestamp</h2>
+  <p>Started {{ r.meta.started }}, finished {{ r.meta.finished }} ({{ r.meta.duration_s }} s) on {{ r.meta.platform }}.</p>
+  {% endif %}
+</main>
+</body>
+</html>
