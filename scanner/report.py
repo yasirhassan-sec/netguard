@@ -140,9 +140,14 @@ def to_pdf(result, sections=SECTIONS):
         return t
 
     m, s, findings = result["meta"], result["summary"], result["findings"]
-    story = [Paragraph("NetGuard - Network Security Report", h1),
-             P(f"Target {m['target']} · {m['mode_label']} · {m['finished']} · scanned from {m['scanner_host']}", small),
-             Spacer(1, 6 * mm)]
+    brand = m.get("brand")
+    title = f"{brand['company']} - Network Security Report" if brand else "NetGuard - Network Security Report"
+    where = (f"Site {m['site']} · " if m.get("site") else "") + f"Target {m['target']}"
+    story = [Paragraph(escape(title), h1),
+             P(f"{where} · {m['mode_label']} · {m['finished']} · scanned from {m['scanner_host']}", small)]
+    if brand and brand.get("contact"):
+        story.append(P(f"Prepared by {brand['company']} · {brand['contact']}", small))
+    story.append(Spacer(1, 6 * mm))
     if "summary" in sections:
         story += [Paragraph("1. Executive summary", h2),
                   P(f"NetGuard score {s['score']}/100 (grade {s['grade']}, {s['status']}). "
@@ -194,5 +199,5 @@ def to_pdf(result, sections=SECTIONS):
 
     buf = io.BytesIO()
     SimpleDocTemplate(buf, pagesize=A4, leftMargin=14*mm, rightMargin=14*mm, topMargin=14*mm,
-                      bottomMargin=14*mm, title="NetGuard report").build(story)
+                      bottomMargin=14*mm, title=title, author=brand["company"] if brand else "NetGuard").build(story)
     return buf.getvalue()

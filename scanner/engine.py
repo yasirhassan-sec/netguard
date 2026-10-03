@@ -4,16 +4,17 @@ import concurrent.futures as cf
 import threading
 from datetime import datetime
 
-from . import db, localfw, network, ports, probes, report, vulns, wifi
+from . import db, licensing, localfw, network, notify, ports, probes, report, vulns, wifi
 
 SEV_RANK = {s: i for i, s in enumerate(vulns.SEVERITY_ORDER)}
 
 
 class ScanJob:
-    def __init__(self, net, mode, options):
+    def __init__(self, net, mode, options, site=None):
         self.net = net
         self.mode = mode
         self.options = options
+        self.site = site
         self.state = "running"
         self.phase = "Starting"
         self.progress = 0
@@ -38,7 +39,7 @@ class ScanJob:
     def to_dict(self):
         with self._lock:
             return {"state": self.state, "phase": self.phase, "progress": self.progress,
-                    "target": str(self.net), "mode": self.mode, "scan_id": self.scan_id,
+                    "target": str(self.net), "mode": self.mode, "scan_id": self.scan_id, "site": self.site,
                     "log": self.log[-80:], "error": self.error, "stats": dict(self.stats),
                     "elapsed": round((datetime.now() - self.started).total_seconds())}
 
@@ -83,18 +84,24 @@ def _config_checks(devices, job):
 
 
 def _alerts(result, previous, first_run, new_keys):
+    """Raise alerts by comparing with the previous scan. Returns the alerts created."""
+    created = []
+
+    def add(*args):
+        created.append(db.add_alert(*args))
+
     devices = result["devices"]
     if not first_run:
         for d in devices:
             if db.device_key(d) in new_keys:
-                db.add_alert("medium", "new_device", f"New device detected: {d['ip']}",
-                             f"{d['vendor']} · {d['hostname'] or 'no hostname'} · MAC {d['mac'] or '-'}")
+                add("medium", "new_device", f"New device detected: {d['ip']}",
+                    f"{d['vendor']} · {d['hostname'] or 'no hostname'} · MAC {d['mac'] or '-'}")
     if previous:
         old_ids = {f["id"] for f in previous["findings"]}
         for f in result["findings"]:
             if f["id"] not in old_ids and f["severity"] in ("critical", "high"):
-                db.add_alert(f["severity"], "new_vulnerability", f"{f['severity'].title()} vulnerability on {f['host']}",
-                             f["title"])
+                add(f["severity"], "new_vulnerability", f"{f['severity'].title()} vulnerability on {f['host']}",
+                    f["title"])
         old_dev = {d["ip"]: d for d in previous["devices"]}
         for d in devices:
             o = old_dev.get(d["ip"])
@@ -102,21 +109,75 @@ def _alerts(result, previous, first_run, new_keys):
                 continue
             new_ports = {e["port"] for e in d["open_ports"]} - {e["port"] for e in o["open_ports"]}
             for p in sorted(new_ports):
-                db.add_alert("low", "new_service", f"New exposed service: port {p} on {d['ip']}",
-                             ports.service_name(p))
+                add("low", "new_service", f"New exposed service: port {p} on {d['ip']}", ports.service_name(p))
             if o.get("risk", {}).get("status") == "secure" and d["risk"]["status"] == "vulnerable":
-                db.add_alert("high", "became_vulnerable", f"{d['ip']} became vulnerable",
-                             f"Previously secure; now {d['risk']['level']} risk")
+                add("high", "became_vulnerable", f"{d['ip']} became vulnerable",
+                    f"Previously secure; now {d['risk']['level']} risk")
     s = result["summary"]
-    db.add_alert("info", "scan_completed", f"Scan completed: {result['meta']['target']}",
-                 f"{s['devices']} devices, {len(result['findings'])} findings, score {s['score']}")
+    add("info", "scan_completed", f"Scan completed: {result['meta']['target']}",
+        f"{s['devices']} devices, {len(result['findings'])} findings, score {s['score']}")
+    return created
+
+
+# ------------------------------------------------------------ job control ---
+
+_job = None
+_job_lock = threading.Lock()
+
+
+def current_job():
+    return _job
+
+
+def build_options(settings, overrides=None):
+    """Scan options from saved settings, optionally overridden per scan."""
+    o = overrides or {}
+    return {
+        "timeout_ms": min(5000, max(100, settings["timeout_ms"])),
+        "threads": min(500, max(10, settings["threads"])),
+        "service_detection": o.get("service_detection", settings["service_detection"]),
+        "config_checks": o.get("config_checks", settings["config_checks"]),
+        "vuln_checks": o.get("vuln_checks", settings["vuln_checks"]),
+        "cve_lookup": o.get("cve_lookup", settings["cve_lookup"]),
+        "ports": o.get("ports", ""),
+    }
+
+
+def start_job(net, mode, options, site=None, background=True):
+    """Start a scan unless one is running. Raises RuntimeError if busy."""
+    global _job
+    with _job_lock:
+        if _job and _job.state == "running":
+            raise RuntimeError("A scan is already running")
+        _job = ScanJob(net, mode, options, site)
+    if background:
+        threading.Thread(target=run, args=(_job,), daemon=True, name="scan").start()
+    else:
+        run(_job)
+    return _job
+
+
+def run_scheduled(mode):
+    """Scheduler entry point: scan every saved site (or the default network) one after another."""
+    settings = db.get_settings()
+    targets = [(s["name"], s["cidr"]) for s in db.list_sites()]
+    if not targets:
+        default = network.default_target()
+        targets = [(None, default)] if default else []
+    for site, cidr in targets:
+        try:
+            net = network.validate_target(cidr, settings["authorized_networks"])
+            start_job(net, mode, build_options(settings), site=site, background=False)
+        except (ValueError, RuntimeError) as exc:
+            db.audit("Scheduled scan skipped", f"{site or cidr}: {exc}")
 
 
 def run(job):
     opts = job.options
     try:
-        job.scan_id = db.create_scan(str(job.net), job.mode)
-        db.audit("Scan started", f"#{job.scan_id} {ports.MODES[job.mode]['label']} on {job.net}")
+        job.scan_id = db.create_scan(str(job.net), job.mode, job.site)
+        where = f"{job.site} ({job.net})" if job.site else str(job.net)
+        db.audit("Scan started", f"#{job.scan_id} {ports.MODES[job.mode]['label']} on {where}")
 
         wifi_info = {"connected": None, "networks": [], "channels": []}
         if job.mode != "single":
@@ -179,17 +240,29 @@ def run(job):
             d["risk"] = vulns.device_risk(d, findings)
         job.update(msg=f"{len(findings)} finding(s)", findings=len(findings))
 
+        settings = db.get_settings()
+        pro = licensing.is_pro(settings)
         result = report.build(str(job.net), job.mode, opts, wifi_info, devices, gateway, findings,
                               job.started, datetime.now())
+        result["meta"]["site"] = job.site
+        result["meta"]["stats"] = dict(job.stats)
+        if pro and settings["brand_company"]:
+            result["meta"]["brand"] = {"company": settings["brand_company"], "contact": settings["brand_contact"],
+                                       "color": settings["brand_color"]}
         previous = db.previous_result(job.scan_id, str(job.net))
         first_run = not db.known_device_keys()
         before = db.known_device_keys()
         db.finish_scan(job.scan_id, result)
         db.upsert_devices(devices, job.scan_id, result["meta"]["finished"])
         new_keys = {db.device_key(d) for d in devices} - before
-        _alerts(result, previous, first_run, new_keys)
+        created = _alerts(result, previous, first_run, new_keys)
         db.audit("Scan completed", f"#{job.scan_id}: {len(devices)} hosts, {len(findings)} findings, "
                                    f"score {result['summary']['score']}")
+        if pro and (settings["email_enabled"] or settings["telegram_enabled"]):
+            job.update("Sending alerts", 99)
+            sent = notify.dispatch(created, settings, job.site or str(job.net))
+            if sent:
+                db.audit("Alerts sent", ", ".join(f"{k}: {v}" for k, v in sent.items()))
         job.update("Completed", 100, f"Scan #{job.scan_id} saved")
         job.state = "done"
     except Exception as exc:

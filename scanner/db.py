@@ -5,6 +5,7 @@ import sqlite3
 import threading
 from datetime import datetime
 
+from . import secretstore
 from .paths import DATA_DIR
 
 DB_PATH = os.path.join(DATA_DIR, "netguard.db")
@@ -19,8 +20,40 @@ DEFAULT_SETTINGS = {
     "cve_lookup": False,        # online NVD lookup (sends product/version strings to NIST)
     "authorized_networks": "",  # comma-separated CIDRs; empty = any private range
     "wifi_sampling": True,
-    "accepted_terms": "",       # timestamp the user confirmed authorised-use terms (first run)
+    "update_check": True,       # ask the update server for new versions (no scan data is sent)
+    # Pro: scheduled scans
+    "schedule_enabled": False,
+    "schedule_frequency": "daily",   # hourly | daily | weekly
+    "schedule_time": "03:00",
+    "schedule_weekday": 6,           # 0 = Monday ... 6 = Sunday
+    "schedule_hours": 6,             # for hourly: every N hours
+    "schedule_mode": "quick",
+    # Pro: notifications
+    "notify_min_severity": "high",
+    "email_enabled": False,
+    "smtp_host": "",
+    "smtp_port": 587,
+    "smtp_user": "",
+    "smtp_password": "",
+    "email_from": "",
+    "email_to": "",
+    "telegram_enabled": False,
+    "telegram_token": "",
+    "telegram_chat_id": "",
+    # Pro: report branding
+    "brand_company": "",
+    "brand_contact": "",
+    "brand_color": "#0B7A5E",
+    # Internal state - never settable through the settings API
+    "accepted_terms": "",       # when the user confirmed the authorised-use terms (first run)
+    "license_key": "",
+    "trial_started": "",
+    "last_scheduled_run": "",
 }
+
+SECRET_KEYS = {"smtp_password", "telegram_token"}
+INTERNAL_KEYS = {"accepted_terms", "license_key", "trial_started", "last_scheduled_run"}
+SECRET_MASK = "********"
 
 _lock = threading.Lock()
 _conn = None
@@ -44,7 +77,18 @@ CREATE TABLE IF NOT EXISTS audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, action TEXT, detail TEXT
 );
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS sites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, cidr TEXT, created TEXT
+);
 """
+
+
+def _migrate(conn):
+    """Add columns introduced after the first release, keeping existing data."""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(scans)")}
+    if "site" not in cols:
+        conn.execute("ALTER TABLE scans ADD COLUMN site TEXT")
+    conn.commit()
 
 
 def now():
@@ -58,6 +102,7 @@ def _db():
         _conn = sqlite3.connect(DB_PATH, check_same_thread=False)
         _conn.row_factory = sqlite3.Row
         _conn.executescript(SCHEMA)
+        _migrate(_conn)
     return _conn
 
 
@@ -86,8 +131,10 @@ def list_audit(limit=300):
 # -------------------------------------------------------------- alerts ---
 
 def add_alert(severity, kind, title, detail=""):
-    _exec("INSERT INTO alerts (ts, severity, kind, title, detail) VALUES (?, ?, ?, ?, ?)",
-          (now(), severity, kind, title, detail))
+    ts = now()
+    alert_id = _exec("INSERT INTO alerts (ts, severity, kind, title, detail) VALUES (?, ?, ?, ?, ?)",
+                     (ts, severity, kind, title, detail))
+    return {"id": alert_id, "ts": ts, "severity": severity, "kind": kind, "title": title, "detail": detail}
 
 
 def list_alerts(limit=200):
@@ -112,9 +159,9 @@ def clear_alerts():
 
 # --------------------------------------------------------------- scans ---
 
-def create_scan(target, mode):
-    return _exec("INSERT INTO scans (started, target, mode, status) VALUES (?, ?, ?, 'running')",
-                 (now(), target, mode))
+def create_scan(target, mode, site=None):
+    return _exec("INSERT INTO scans (started, target, mode, status, site) VALUES (?, ?, ?, 'running', ?)",
+                 (now(), target, mode, site))
 
 
 def finish_scan(scan_id, result):
@@ -131,7 +178,7 @@ def fail_scan(scan_id, error):
 
 def list_scans(limit=100):
     rows = _query("SELECT id, started, finished, target, mode, status, devices, findings, duration, "
-                  "summary, error FROM scans ORDER BY id DESC LIMIT ?", (limit,))
+                  "summary, error, site FROM scans ORDER BY id DESC LIMIT ?", (limit,))
     for r in rows:
         r["summary"] = json.loads(r["summary"]) if r["summary"] else None
     return rows
@@ -205,22 +252,54 @@ def get_device(key):
 # ------------------------------------------------------------ settings ---
 
 def get_settings():
+    """All settings with secrets decrypted (for internal use only - never send to the browser)."""
     stored = {r["key"]: json.loads(r["value"]) for r in _query("SELECT key, value FROM settings")}
-    return {**DEFAULT_SETTINGS, **{k: v for k, v in stored.items() if k in DEFAULT_SETTINGS}}
+    merged = {**DEFAULT_SETTINGS, **{k: v for k, v in stored.items() if k in DEFAULT_SETTINGS}}
+    for k in SECRET_KEYS:
+        merged[k] = secretstore.unprotect(merged[k])
+    return merged
 
 
-def save_settings(values):
+def public_settings():
+    """Settings safe to show in the UI: secrets masked, internal state removed."""
+    s = get_settings()
+    for k in SECRET_KEYS:
+        s[k] = SECRET_MASK if s[k] else ""
+    for k in INTERNAL_KEYS:
+        s.pop(k, None)
+    return s
+
+
+def save_settings(values, internal=False):
+    """Save known keys with type coercion. Internal keys only when internal=True."""
     clean = {}
     for key, default in DEFAULT_SETTINGS.items():
-        if key not in values:
+        if key not in values or (key in INTERNAL_KEYS and not internal):
             continue
         v = values[key]
+        if key in SECRET_KEYS and v == SECRET_MASK:
+            continue  # the UI sent the mask back unchanged: keep the stored secret
         if isinstance(default, bool):
             v = bool(v)
         elif isinstance(default, int):
             v = int(v)
         else:
             v = str(v).strip()
-        clean[key] = v
-        _exec("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, json.dumps(v)))
+        clean[key] = SECRET_MASK if key in SECRET_KEYS and v else v
+        stored = secretstore.protect(v) if key in SECRET_KEYS else v
+        _exec("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, json.dumps(stored)))
     return clean
+
+
+# --------------------------------------------------------------- sites ---
+
+def list_sites():
+    return _query("SELECT * FROM sites ORDER BY name")
+
+
+def add_site(name, cidr):
+    return _exec("INSERT INTO sites (name, cidr, created) VALUES (?, ?, ?)", (name, cidr, now()))
+
+
+def delete_site(site_id):
+    _exec("DELETE FROM sites WHERE id=?", (site_id,))
