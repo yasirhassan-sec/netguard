@@ -312,3 +312,28 @@ h3.divider { border-top: 1px solid var(--border); padding-top: 14px; margin: 16p
 }
 @media (max-width: 950px) { .ov-2, .ov-3, .ov-4 { grid-template-columns: 1fr; } }
 @media (max-width: 560px) { .ov-top { grid-template-columns: 1fr; } }
+
+/* ------------------------------------------------- Pro: licence, sites, schedule --- */
+.pro-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.pro-grid > #license-card { grid-column: 1 / -1; }
+@media (max-width: 950px) { .pro-grid { grid-template-columns: 1fr; } }
+.pill.edition { text-decoration: none; }
+.pro-tag { font-size: 11.5px; color: var(--high); border: 1px solid var(--high); border-radius: 99px; padding: 1px 9px; }
+.pro-tag.unlocked { color: var(--good); border-color: var(--good); }
+fieldset { border: 0; padding: 0; margin: 0; display: contents; }
+fieldset[disabled] label, fieldset[disabled] .form-actions { opacity: .45; }
+.form-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.locked-note { margin-top: 10px; }
+.feature-list { margin: 6px 0 14px; padding-left: 20px; color: var(--muted); }
+.key-form { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; flex-wrap: wrap; }
+.key-form textarea { flex: 1 1 360px; background: #14181d; color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+  padding: 9px 11px; font: 12.5px/1.4 "Cascadia Mono", Consolas, monospace; resize: vertical; }
+.inline-form { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.inline-form input { flex: 1 1 160px; width: auto; }
+.site-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.site-row:last-child { border-bottom: 0; }
+input[type=color] { height: 40px; padding: 4px; }
+select:disabled, input:disabled { opacity: .6; }
+.update-banner { background: rgba(47, 211, 162, .12); border-bottom: 1px solid var(--accent); color: var(--text);
+  padding: 10px 24px; font-size: 13.5px; text-align: center; }
+.update-banner a { color: var(--accent); font-weight: 600; margin-left: 6px; }

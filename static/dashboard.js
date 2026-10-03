@@ -333,7 +333,7 @@ async function loadHistory() {
   $("#history tbody").innerHTML = scans.map((s) => `<tr>
       <td>${s.status === "completed" ? `<input type="checkbox" class="cmp" value="${s.id}">` : ""}</td>
       <td>#${s.id} ${fmtDate(s.started)}</td><td>${esc(info.modes[s.mode]?.label || s.mode)}</td>
-      <td class="mono">${esc(s.target)}</td><td>${s.devices}</td><td>${s.findings}</td>
+      <td>${s.site ? `<b>${esc(s.site)}</b><br>` : ""}<span class="mono">${esc(s.target)}</span></td><td>${s.devices}</td><td>${s.findings}</td>
       <td>${s.summary ? `${s.summary.score} (${s.summary.grade})` : esc(s.status)}</td><td>${s.duration ? s.duration + "s" : "-"}</td>
     </tr>`).join("") || `<tr><td colspan="8" class="empty">No scans yet.</td></tr>`;
 }
@@ -377,36 +377,161 @@ async function compareSelected() {
 
 // --------------------------------------------------------------- settings ---
 
-const SETTING_FIELDS = [
-  ["timeout_ms", "Port timeout (ms)", "number"], ["threads", "Threads", "number"],
-  ["custom_ports", "Custom scan ports", "text"], ["authorized_networks", "Authorized networks (CIDRs, comma-separated; empty = any private)", "text", true],
-  ["service_detection", "Service detection", "bool"], ["config_checks", "Configuration checks (SMBv1, TLS, FTP, SNMP)", "bool"],
-  ["vuln_checks", "Vulnerability checks", "bool"], ["cve_lookup", "Online CVE lookup by default", "bool"],
-  ["wifi_sampling", "Sample Wi-Fi signal in background", "bool"],
-];
+// Field: [key, label, type, fullWidth, options]. Types: bool, number, text, password, time, color,
+// select (string values) and selectn (numeric values).
+const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const FORM_GROUPS = {
+  settings: { form: "#settings", submit: "Save settings", fields: [
+    ["timeout_ms", "Port timeout (ms)", "number"], ["threads", "Threads", "number"],
+    ["custom_ports", "Custom scan ports", "text"],
+    ["authorized_networks", "Authorized networks (CIDRs, comma-separated; empty = any private)", "text", true],
+    ["service_detection", "Service detection", "bool"], ["config_checks", "Configuration checks (SMBv1, TLS, FTP, SNMP)", "bool"],
+    ["vuln_checks", "Vulnerability checks", "bool"], ["cve_lookup", "Online CVE lookup by default", "bool"],
+    ["wifi_sampling", "Sample Wi-Fi signal in background", "bool"], ["update_check", "Check for NetGuard updates", "bool"],
+  ] },
+  schedule: { form: "#schedule-form", pro: "scheduler", submit: "Save schedule", fields: [
+    ["schedule_enabled", "Run scans automatically", "bool", true],
+    ["schedule_frequency", "How often", "select", false, [["daily", "Daily"], ["weekly", "Weekly"], ["hourly", "Every few hours"]]],
+    ["schedule_mode", "Scan type", "select", false, [["quick", "Quick scan"], ["full", "Full scan"]]],
+    ["schedule_time", "Time (daily or weekly)", "time"],
+    ["schedule_weekday", "Day (weekly)", "selectn", false, WEEKDAYS.map((d, i) => [i, d])],
+    ["schedule_hours", "Every (hourly)", "selectn", false, [1, 2, 3, 4, 6, 8, 12, 24].map((h) => [h, `${h} hour${h > 1 ? "s" : ""}`])],
+  ] },
+  notify: { form: "#notify-form", pro: "notifications", submit: "Save alerts", tests: ["email", "telegram"], fields: [
+    ["notify_min_severity", "Send alerts for", "select", true,
+      [["critical", "Critical only"], ["high", "High and critical"], ["medium", "Medium and above"], ["low", "Low and above"]]],
+    ["email_enabled", "Send by email", "bool", true],
+    ["smtp_host", "SMTP server", "text"], ["smtp_port", "Port (587 or 465)", "number"],
+    ["smtp_user", "Username", "text"], ["smtp_password", "Password", "password"],
+    ["email_from", "From", "text"], ["email_to", "To (comma-separated)", "text"],
+    ["telegram_enabled", "Send to Telegram", "bool", true],
+    ["telegram_token", "Bot token (from @BotFather)", "password"], ["telegram_chat_id", "Chat ID", "text"],
+  ] },
+  brand: { form: "#brand-form", pro: "branding", submit: "Save branding", fields: [
+    ["brand_company", "Company name on reports", "text", true],
+    ["brand_contact", "Contact line (email, phone or website)", "text", true],
+    ["brand_color", "Report header colour", "color"],
+  ] },
+};
+let license = null;
+const isPro = () => license && license.edition === "pro";
+
+function fieldHtml([k, label, type, full, options], s) {
+  if (type === "bool") return `<label class="check ${full ? "full" : ""}"><input type="checkbox" name="${k}" ${s[k] ? "checked" : ""}> ${esc(label)}</label>`;
+  if (type === "select" || type === "selectn") {
+    return `<label class="f ${full ? "full" : ""}">${esc(label)}<select name="${k}">${options.map(([v, t]) =>
+      `<option value="${esc(v)}" ${String(s[k]) === String(v) ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label>`;
+  }
+  const extra = type === "password" ? ' autocomplete="new-password"' : ' autocomplete="off"';
+  return `<label class="f ${full ? "full" : ""}">${esc(label)}<input name="${k}" type="${type}" value="${esc(s[k])}"${extra}></label>`;
+}
+
+function renderForm(name, s) {
+  const g = FORM_GROUPS[name];
+  const locked = g.pro && !isPro();
+  $(g.form).innerHTML = `<fieldset ${locked ? "disabled" : ""}>${g.fields.map((f) => fieldHtml(f, s)).join("")}
+    <div class="full form-actions"><button class="primary" type="submit">${g.submit}</button>
+    ${(g.tests || []).map((c) => `<button type="button" data-test="${c}">Send test ${c === "email" ? "email" : "to Telegram"}</button>`).join("")}
+    <span class="hint" data-msg></span></div></fieldset>
+    ${locked ? `<p class="hint locked-note">Available in NetGuard Pro. <a href="#pro-sec">Start the free trial</a> to try it.</p>` : ""}`;
+}
 
 async function loadSettings() {
   const s = await api("/api/settings");
   $("#cve").checked = s.cve_lookup;
-  $("#settings").innerHTML = SETTING_FIELDS.map(([k, label, type, full]) => type === "bool"
-    ? `<label class="check"><input type="checkbox" name="${k}" ${s[k] ? "checked" : ""}> ${esc(label)}</label>`
-    : `<label class="f ${full ? "full" : ""}">${esc(label)}<input name="${k}" type="${type}" value="${esc(s[k])}"></label>`).join("")
-    + `<div class="full"><button class="primary" type="submit">Save settings</button> <span class="hint" id="settings-msg"></span></div>`;
+  Object.keys(FORM_GROUPS).forEach((name) => renderForm(name, s));
 }
 
-async function saveSettings(e) {
-  e.preventDefault();
-  const form = $("#settings");
+async function saveForm(name, form) {
   const values = {};
-  SETTING_FIELDS.forEach(([k, , type]) => {
+  FORM_GROUPS[name].fields.forEach(([k, , type]) => {
     const el = form.elements[k];
-    values[k] = type === "bool" ? el.checked : type === "number" ? Number(el.value) : el.value;
+    values[k] = type === "bool" ? el.checked : (type === "number" || type === "selectn") ? Number(el.value) : el.value;
   });
+  const msg = form.querySelector("[data-msg]");
   try {
     await api("/api/settings", { json: values });
-    $("#settings-msg").textContent = "Saved.";
+    msg.textContent = "Saved.";
     loadAudit();
-  } catch (err) { $("#settings-msg").textContent = err.message; }
+    if (name === "schedule") loadSchedule();
+  } catch (err) { msg.textContent = err.message; }
+}
+
+// ------------------------------------------------------- licence & sites ---
+
+function renderLicense(st) {
+  license = st;
+  const pill = $("#edition-pill"), badge = $("#license-badge");
+  const label = st.edition !== "pro" ? "Free" : st.source === "trial" ? `Pro trial · ${st.days_left} day${st.days_left === 1 ? "" : "s"} left` : "Pro";
+  [pill, badge].forEach((el) => { el.textContent = label; el.className = `pill ${st.edition === "pro" ? "done" : ""}`; });
+  document.querySelectorAll("[data-pro]").forEach((t) => t.classList.toggle("unlocked", st.edition === "pro"));
+  const lic = st.license;
+  let html = "";
+  if (st.source === "license") {
+    html = `<p><b>Licensed to ${esc(lic.name)}</b> (${esc(lic.email)})</p>
+      <p class="hint">Licence ${esc(lic.id)} · ${lic.exp ? `valid until ${esc(lic.exp)}` : "does not expire"} · ${esc(lic.seats)} seat(s)</p>
+      <button type="button" id="license-remove">Remove licence</button>`;
+  } else {
+    if (st.source === "trial") html += `<p><b>Pro trial active:</b> ${st.days_left} day${st.days_left === 1 ? "" : "s"} left.</p>`;
+    else html += `<p>You're using <b>NetGuard Free</b>. Pro adds:</p>`;
+    if (st.source !== "trial") html += `<ul class="feature-list">${Object.values(st.features).map((f) => `<li>${esc(f)}</li>`).join("")}</ul>`;
+    if (st.trial_available) html += `<button type="button" class="primary" id="trial-start">Start ${st.trial_days}-day free trial</button>`;
+    else if (st.source === "trial_ended") html += `<p class="hint">Your free trial has ended.</p>`;
+    html += `<form id="license-form" class="key-form"><textarea name="key" rows="3" placeholder="Paste your licence key (NG1-...)" spellcheck="false"></textarea>
+      <button type="submit">Activate licence</button></form>`;
+  }
+  if (st.error) html += `<p class="note error">${esc(st.error)}</p>`;
+  $("#license-body").innerHTML = html;
+}
+
+async function loadLicense() {
+  renderLicense(await api("/api/license"));
+}
+
+function renderSites(sites) {
+  $("#sites-list").innerHTML = sites.length ? sites.map((s) => `
+    <div class="site-row"><div><b>${esc(s.name)}</b> <span class="mono muted">${esc(s.cidr)}</span></div>
+    <button type="button" class="small" data-del-site="${s.id}">Remove</button></div>`).join("")
+    : `<p class="hint">No saved sites yet.</p>`;
+  const sel = $("#site"), current = sel.value;
+  sel.innerHTML = `<option value="">This network</option>` +
+    sites.map((s) => `<option value="${s.id}">${esc(s.name)} (${esc(s.cidr)})</option>`).join("");
+  sel.value = sites.some((s) => String(s.id) === current) ? current : "";
+  onSiteChange();
+}
+
+async function loadSites() {
+  renderSites(await api("/api/sites"));
+}
+
+function onSiteChange() {
+  const siteId = $("#site").value;
+  const site = [...$("#site").options].find((o) => o.value === siteId && siteId);
+  $("#target").disabled = !!site;
+  if (site) $("#target").value = site.textContent.match(/\(([^)]+)\)$/)?.[1] || "";
+  else if (info && !$("#target").value) $("#target").value = info.default_target || "";
+}
+
+async function loadSchedule() {
+  const sc = await api("/api/schedule");
+  const when = sc.next ? new Date(sc.next).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : null;
+  $("#next-scan").classList.toggle("hidden", !(sc.enabled && when));
+  $("#next-scan").textContent = when ? `Next scheduled scan: ${when} · ${sc.mode === "full" ? "Full" : "Quick"} scan` : "";
+  $("#schedule-next").textContent = sc.enabled && when
+    ? `Next run: ${when}. NetGuard must be running (enable "Start with Windows" in the installer).`
+    : "Scheduled scans are off.";
+}
+
+async function loadUpdate() {
+  try {
+    const u = await api("/api/update");
+    if (u.available && u.url) {
+      const b = $("#update-banner");
+      b.innerHTML = `NetGuard ${esc(u.latest)} is available (you have ${esc(u.current)}). ${esc(u.notes || "")}
+        <a href="${esc(u.url)}" target="_blank" rel="noopener">Download</a>`;
+      b.classList.remove("hidden");
+    }
+  } catch (e) { /* offline: ignore */ }
 }
 
 // ------------------------------------------------------------------- scan ---
@@ -445,8 +570,11 @@ async function poll() {
 async function startScan() {
   $("#start-error").textContent = "";
   try {
+    const mode = $("#mode").value;
+    const siteId = mode !== "single" && $("#site").value ? Number($("#site").value) : null;
     const job = await api("/api/scan", { json: {
-      mode: $("#mode").value, target: $("#target").value, ports: $("#ports").value, cve_lookup: $("#cve").checked,
+      mode, target: $("#target").value, ports: $("#ports").value, cve_lookup: $("#cve").checked,
+      ...(siteId ? { site_id: siteId } : {}),
     } });
     renderJob(job);
     if (!pollTimer) pollTimer = setInterval(poll, 1000);
@@ -466,6 +594,7 @@ async function refreshAll() {
   let diff = null;
   if (o.result && same.length > 1) diff = await api(`/api/compare?a=${same[1].id}&b=${same[0].id}`).catch(() => null);
   renderOverview(o.result, same, diff, o.alerts);
+  loadSchedule().catch(() => {});
   loadHistory();
   loadAlerts();
   loadAudit();
@@ -518,7 +647,53 @@ const observer = new IntersectionObserver((entries) => {
 }, { rootMargin: "-45% 0px -50% 0px" });
 navLinks.forEach((a) => { const sec = document.querySelector(a.getAttribute("href")); if (sec) observer.observe(sec); });
 $("#alerts-read").addEventListener("click", async () => { await api("/api/alerts/read", { json: {} }); loadAlerts(); });
-$("#settings").addEventListener("submit", saveSettings);
+Object.entries(FORM_GROUPS).forEach(([name, g]) => {
+  const form = $(g.form);
+  form.addEventListener("submit", (e) => { e.preventDefault(); saveForm(name, form); });
+  form.addEventListener("click", async (e) => {
+    const b = e.target.closest("button[data-test]");
+    if (!b) return;
+    const msg = form.querySelector("[data-msg]");
+    msg.textContent = "Sending... (save first if you changed anything)";
+    try { await api("/api/notify/test", { json: { channel: b.dataset.test } }); msg.textContent = "Test sent."; }
+    catch (err) { msg.textContent = err.message; }
+  });
+});
+
+$("#license-body").addEventListener("click", async (e) => {
+  const act = e.target.id === "trial-start" ? "/api/license/trial" : e.target.id === "license-remove" ? "/api/license/remove" : null;
+  if (!act) return;
+  try { renderLicense(await api(act, { json: {} })); loadSettings(); loadSchedule(); loadAudit(); }
+  catch (err) { alert(err.message); }
+});
+$("#license-body").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    renderLicense(await api("/api/license/activate", { json: { key: e.target.elements.key.value } }));
+    loadSettings(); loadSchedule(); loadAudit();
+  } catch (err) {
+    await loadLicense();
+    $("#license-body").insertAdjacentHTML("beforeend", `<p class="note error">${esc(err.message)}</p>`);
+  }
+});
+
+$("#site").addEventListener("change", onSiteChange);
+$("#site-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("#site-error").textContent = "";
+  try {
+    const r = await api("/api/sites", { json: { name: e.target.elements.name.value, cidr: e.target.elements.cidr.value } });
+    e.target.reset();
+    renderSites(r.sites);
+    loadAudit();
+  } catch (err) { $("#site-error").textContent = err.message; }
+});
+$("#sites-list").addEventListener("click", async (e) => {
+  const id = e.target.dataset.delSite;
+  if (!id) return;
+  renderSites(await api(`/api/sites/${id}`, { method: "DELETE" }));
+  loadAudit();
+});
 $("#oui-update").addEventListener("click", async (ev) => {
   ev.target.disabled = true;
   $("#oui-status").textContent = "Downloading vendor database...";
@@ -535,8 +710,12 @@ $("#oui-update").addEventListener("click", async (ev) => {
     return;
   }
   if (!info.terms_accepted) showTerms();
+  renderLicense(info.license);
+  renderSites(info.sites);
   loadWifi();
   loadSettings();
+  loadSchedule();
+  loadUpdate();
   await refreshAll();
   const job = await api("/api/scan").catch(() => ({ state: "idle" }));
   renderJob(job);
