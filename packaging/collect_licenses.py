@@ -12,7 +12,7 @@ OUT = os.path.join(ROOT, "LICENSES")
 # Runtime dependencies that end up inside NetGuard.exe (plus their own dependencies).
 PACKAGES = ["flask", "werkzeug", "jinja2", "markupsafe", "itsdangerous", "click", "blinker",
             "psutil", "reportlab", "pywebview", "proxy_tools", "bottle", "pythonnet", "clr_loader",
-            "cffi", "pycparser", "typing_extensions"]
+            "cffi", "pycparser", "typing_extensions", "cryptography"]
 
 DATA_NOTICES = """\
 Data sources
@@ -35,8 +35,8 @@ def main():
         lic = dist.metadata.get("License-Expression") or dist.metadata.get("License") or ""
         lic = lic.splitlines()[0][:60] if lic else "see file"
         summary.append(f"{dist.metadata['Name']} {dist.version} - {lic}")
-        texts = [f for f in (dist.files or []) if "licen" in f.name.lower() or "copying" in f.name.lower()
-                 or "notice" in f.name.lower()]
+        texts = [f for f in (dist.files or []) if ("licen" in f.name.lower() or "copying" in f.name.lower()
+                 or "notice" in f.name.lower()) and "darkgarden" not in str(f).lower()]  # GPL font is not shipped
         for f in texts:
             src = dist.locate_file(f)
             if os.path.isfile(src):

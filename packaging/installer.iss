@@ -4,7 +4,7 @@
 ; Output: dist\NetGuard-Setup-<version>.exe
 
 #define AppName "NetGuard"
-#define AppVersion "2.1.0"
+#define AppVersion "3.0.0"
 #define AppPublisher "NetGuard"
 #define AppExe "NetGuard.exe"
 

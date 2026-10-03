@@ -18,6 +18,9 @@ a = Analysis(
     excludes=["tkinter", "pytest", "PIL"],
     noarchive=False,
 )
+# ReportLab bundles the GPL-licensed "DarkGarden" demo font. NetGuard never uses it, so leave it
+# out to keep the shipped product free of GPL files.
+a.datas = [d for d in a.datas if "darkgarden" not in d[0].lower()]
 pyz = PYZ(a.pure)
 
 exe = EXE(
