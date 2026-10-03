@@ -1,0 +1,29 @@
+NetGuard third-party notices
+============================
+
+Flask 3.1.3 - BSD-3-Clause
+Werkzeug 3.1.8 - BSD-3-Clause
+Jinja2 3.1.6 - see file
+MarkupSafe 3.0.3 - BSD-3-Clause
+itsdangerous 2.2.0 - see file
+click 8.4.2 - BSD-3-Clause
+blinker 1.9.0 - see file
+psutil 7.1.3 - BSD-3-Clause
+reportlab 4.5.1 - BSD license (see license.txt for details), Copyright (c) 200
+pywebview 6.2.1 - BSD 3-Clause License
+proxy_tools 0.1.0 - MIT
+bottle 0.13.4 - MIT
+pythonnet 3.2.0 - MIT
+clr_loader 0.3.1 - see file
+cffi 2.0.0 - MIT
+pycparser 2.22 - BSD-3-Clause
+typing_extensions 4.16.0 - PSF-2.0
+
+Python itself: Python Software Foundation License.
+
+Data sources
+============
+* IEEE OUI registry (MAC address -> manufacturer), downloaded by the user at runtime from
+  https://standards-oui.ieee.org/ . IEEE Registration Authority data.
+* NIST National Vulnerability Database (optional online CVE lookup).
+  This product uses the NVD API but is not endorsed or certified by the NVD.
