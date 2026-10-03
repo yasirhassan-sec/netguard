@@ -35,7 +35,7 @@ def test_foreign_host_header_is_rejected(client):
 
 def test_scan_requires_terms_then_rejects_public_target(client):
     h = {"X-NetGuard-Token": netguard.API_TOKEN}
-    netguard.db.save_settings({"accepted_terms": ""})
+    netguard.db.save_settings({"accepted_terms": ""}, internal=True)
     r = client.post("/api/scan", json={"mode": "quick", "target": "192.168.1.0/24"}, headers=h)
     assert r.status_code == 403 and "terms" in r.get_json()["error"]
     # accepted_terms can't be smuggled in through the normal settings endpoint
