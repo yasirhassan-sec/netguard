@@ -14,5 +14,11 @@ reports/
 # Generated
 packaging/netguard.png
 
+# Secrets: licence signing key and code-signing certificates must never be committed
+*.pem
+*.pfx
+*.p12
+.netguard-signing/
+
 # Temporary folder for uploading through the GitHub website
 github-upload/

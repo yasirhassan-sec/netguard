@@ -85,6 +85,30 @@ python -m pytest -q tests
 - **History:** scan comparison, alerts (new device, new vulnerability, new port, a device that became vulnerable) and an audit log.
 - **Reports:** PDF, HTML, CSV and JSON, with selectable sections.
 
+## Editions
+
+| | Free | Pro |
+|---|---|---|
+| Wi-Fi survey, discovery, all scan modes, vulnerability checks | Yes | Yes |
+| Score, alerts in the app, reports, history | Yes | Yes |
+| Saved sites | 1 | Unlimited |
+| Scheduled automatic scans | | Yes |
+| Email and Telegram alerts | | Yes |
+| Branded reports (your company name, contact, colour) | | Yes |
+
+- **Trial:** users can start a 14-day Pro trial once per PC (**Pro** section of the dashboard).
+- **Licence keys:** signed with Ed25519 and verified offline, so no licence server is needed. Keys can't be forged without your private key.
+
+### Issuing licence keys (seller)
+
+The signing key pair was created once with `python tools/keygen.py init`. The private key lives in `%USERPROFILE%\.netguard-signing\`, never in this repo. Back it up.
+
+Issue a one-year Pro licence:
+```bash
+python tools/keygen.py issue --name "Customer Name" --email customer@example.com --days 365
+```
+Leave out `--days` for a licence that never expires. The customer pastes the key into **Pro > Licence > Activate licence**.
+
 ## Security of the app itself
 
 - The server listens on `127.0.0.1` only.
@@ -92,6 +116,8 @@ python -m pytest -q tests
 - Every state-changing request needs a per-run token, which blocks CSRF from other websites.
 - Security headers are set on responses: CSP, X-Frame-Options, nosniff and no-referrer.
 - Network-sourced text (SSIDs, banners) is escaped before display.
+- SMTP passwords and Telegram tokens are encrypted at rest with Windows DPAPI and never sent back to the browser.
+- Pro features are enforced on the server, not only hidden in the UI.
 
 ## Data locations
 
@@ -103,11 +129,14 @@ python -m pytest -q tests
 ```
 app.py              Flask app, REST API, security middleware
 desktop.py          Native desktop window (pywebview) + single-instance lock
-scanner/            Engine: wifi, network, ports, probes, localfw, vulns, engine, report, db, oui, paths
+scanner/            Engine: wifi, network, ports, probes, localfw, vulns, engine, report, db, oui, paths,
+                    licensing, scheduler, notify, updates, secretstore
 templates/, static/ Dashboard (index.html, dashboard.js/.css) and the HTML report template
-tests/              pytest suite (engine rules, parsers, API security)
+tests/              pytest suite (engine rules, parsers, API security, licensing, Pro features)
+tools/keygen.py     Licence key generator (seller only; not part of the shipped app)
 packaging/          PyInstaller spec, Inno Setup script, icon and licence tools
 legal/              EULA and privacy policy DRAFTS (lawyer review required before sale)
+docs/               Release checklist
 LICENSES/           Third-party notices (generated)
 ```
 
@@ -115,6 +144,8 @@ LICENSES/           Third-party notices (generated)
 
 1. ~~Foundation: app security, data paths, logging, tests~~ (done)
 2. ~~Desktop app + installer~~ (done; installer needs Inno Setup)
-3. **Editions and licensing:** Free vs Pro, offline-verifiable signed licence keys, trial
-4. **Pro features:** scheduled scans, multiple sites, branded reports, notifications, user accounts
-5. **Release readiness:** code-signing certificate, final EULA and privacy policy, update checker, website and payments
+3. ~~Editions and licensing: Free vs Pro, signed licence keys, 14-day trial~~ (done)
+4. ~~Pro features: scheduled scans, multiple sites, branded reports, email and Telegram alerts~~ (done)
+5. **Release readiness:**
+   - Done: update checker, a code-signing step in the build, GPL-free bundle, release checklist.
+   - Still to do yourself: the certificate, a lawyer review, the website and payments. See [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
