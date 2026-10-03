@@ -6,13 +6,20 @@ What NetGuard collects
   network names and signal strength, findings) are stored ONLY on your computer in
   %LOCALAPPDATA%\NetGuard. We never receive them.
 - A local audit log of actions (scans started, reports generated, settings changed).
+- Settings you enter, including SMTP and Telegram credentials for alerts. Passwords and tokens
+  are encrypted with Windows DPAPI and can only be read by your Windows account.
 
 When NetGuard contacts the internet
 - Vendor database download (on request): fetches the public IEEE OUI list. No scan data is sent.
 - Optional CVE lookup (off by default): sends detected software product/version strings
   (e.g. "OpenSSH 8.2") to the NIST National Vulnerability Database API. No IP addresses,
   MAC addresses or network names are sent.
-- [License activation / update checks, once implemented: describe exactly what is sent.]
+- Update check (can be turned off in Settings): requests a small version file from
+  [UPDATE URL]. Only your IP address and the NetGuard version (in the request) reach that server.
+- Email and Telegram alerts (Pro, off by default): when you enable them, alert summaries
+  (finding titles, device IP addresses, site names) are sent through YOUR mail server or YOUR
+  Telegram bot to the recipients you choose. They do not pass through our servers.
+- Licence activation is offline: keys are verified on your computer and nothing is sent.
 
 Telemetry
 - NetGuard contains no analytics or telemetry.
